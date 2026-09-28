@@ -187,16 +187,28 @@ JSAtom* ParserAtom::instantiateAtom(JSContext* cx, FrontendContext* fc,
                                     CompilationAtomCache& atomCache) const {
   MOZ_ASSERT(isInstantiatedAsJSAtom());
 
+  // Foxhound: a length one or two atom can reach here, which it otherwise never
+  // does. ParserAtomsTable::internChar16 skips the tiny and well-known lookups
+  // for a tainted string, so a tainted tiny literal becomes an ordinary parser
+  // atom rather than the canonical one. Handing those characters to the
+  // NonStatic atomizer mints a *second* atom alongside the static string that
+  // already holds them, and property lookup on a native object compares atoms by
+  // identity, so the two never match: `o['xy']` in code compiled from a tainted
+  // source silently reads undefined. Resolve to the static string first, which
+  // is what the untainted path would have produced.
   JSAtom* atom;
   if (hasLatin1Chars()) {
-    atom =
-        AtomizeCharsNonStaticValidLength(cx, hash(), latin1Chars(), length());
+    atom = cx->staticStrings().lookup(latin1Chars(), length());
+    if (!atom) {
+      atom =
+          AtomizeCharsNonStaticValidLength(cx, hash(), latin1Chars(), length());
+    }
   } else {
-    atom =
-        AtomizeCharsNonStaticValidLength(cx, hash(), twoByteChars(), length());
-  }
-  if (taintDataSize_ > 0) {
-    std::string taintData(taint(), taintDataSize_);
+    atom = cx->staticStrings().lookup(twoByteChars(), length());
+    if (!atom) {
+      atom =
+          AtomizeCharsNonStaticValidLength(cx, hash(), twoByteChars(), length());
+    }
   }
   if (!atom) {
     return nullptr;
