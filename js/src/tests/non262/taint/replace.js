@@ -60,6 +60,32 @@ function strReplaceTest() {
     assertNotHasTaintOperation(a, 'replace');
     assertLastTaintOperationEquals(b, 'replace');
 
+    // Test no replace with a non-global regex, for each of the optimized
+    // paths: simple, substitution and functional.
+    a = taint("abc");
+    b = a.replace(/z/, "y");
+    assertFullTainted(b);
+    assertLastTaintOperationEquals(b, 'replace');
+    assertNotHasTaintOperation(a, 'replace');
+
+    b = a.replace(/z/, "$&y");
+    assertFullTainted(b);
+    assertLastTaintOperationEquals(b, 'replace');
+    assertNotHasTaintOperation(a, 'replace');
+
+    b = a.replace(/z/, x => x);
+    assertFullTainted(b);
+    assertLastTaintOperationEquals(b, 'replace');
+    assertNotHasTaintOperation(a, 'replace');
+
+    // Test a sticky regex whose lastIndex is past the end of the string
+    var re = /b/y;
+    re.lastIndex = 10;
+    b = a.replace(re, "y");
+    assertFullTainted(b);
+    assertLastTaintOperationEquals(b, 'replace');
+    assertNotHasTaintOperation(a, 'replace');
+
     // Test function call
     str = taint("aba");
     rep = str.replace("a", x => x+1)
