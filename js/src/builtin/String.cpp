@@ -2440,6 +2440,22 @@ static bool str_at(JSContext* cx, unsigned argc, Value* vp) {
   }
   MOZ_ASSERT(*index < str->length());
 
+  // Foxhound: avoid atoms here if the base string is tainted, as str_charAt
+  // does, otherwise the static string carries no taint.
+  if (str->isTainted()) {
+    str = NewDependentString(cx, str, index.value(), 1);
+    if (!str) {
+      return false;
+    }
+    // Foxhound: build the operation first, as it allocates which might move
+    // str->taint()'s result.
+    TaintOperation op("at", TaintLocationFromContext(cx),
+                      { taintarg(cx, index.value()) });
+    str->taint().extend(std::move(op));
+    args.rval().setString(str);
+    return true;
+  }
+
   // Step 8.
   auto* result = cx->staticStrings().getUnitStringForElement(cx, str, *index);
   if (!result) {
