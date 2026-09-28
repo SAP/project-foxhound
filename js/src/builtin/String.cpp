@@ -1275,19 +1275,22 @@ static JSLinearString* ToLowerCaseInternal(JSContext* cx, JSLinearString* str) {
 
 template <typename CharT>
 static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
-  JSLinearString* res = ToLowerCaseInternal<CharT>(cx, str);
-  if (res && str->isTainted()) {
-    if (res == str) {
-      res = NewDependentString(cx, str, 0, str->length());
+  // Foxhound: rooted because NewDependentString and the taint operation both
+  // allocate, which can move either string.
+  Rooted<JSLinearString*> rootedStr(cx, str);
+  Rooted<JSLinearString*> res(cx, ToLowerCaseInternal<CharT>(cx, str));
+  if (res && rootedStr->isTainted()) {
+    if (res.get() == rootedStr.get()) {
+      res = NewDependentString(cx, rootedStr, 0, rootedStr->length());
       if (!res) {
         return nullptr;
       }
     }
-    SafeStringTaint taint(str->taint());
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
+    SafeStringTaint taint(rootedStr->taint());
+    taint.extend(TaintOperationFromContext(cx, "toLowerCase", rootedStr));
     res->setTaint(taint);
   }
-  return res;
+  return res.get();
 }
 
 JSLinearString* js::StringToLowerCase(JSContext* cx, JSString* string) {
@@ -1653,16 +1656,30 @@ static JSLinearString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   using TwoByteStringChars = StringChars<char16_t>;
 
   mozilla::MaybeOneOf<Latin1StringChars, TwoByteStringChars> newChars;
+  // Foxhound: rooted because the taint operation allocates, which can move str.
+  Rooted<JSLinearString*> rootedStr(cx, str);
   SafeStringTaint taint(str->taint());
   if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", str));
+    taint.extend(TaintOperationFromContext(cx, "toUpperCase", rootedStr));
   }
 
-  const size_t length = str->length();
+  const size_t length = rootedStr->length();
   size_t resultLength;
+
+  // Foxhound: the string may turn out not to change, in which case we hand back
+  // a copy rather than the input. That has to be allocated here, as the scope
+  // below cannot allocate.
+  Rooted<JSLinearString*> unchangedResult(cx, rootedStr);
+  if (taint.hasTaint()) {
+    unchangedResult = NewDependentString(cx, rootedStr, 0, length);
+    if (!unchangedResult) {
+      return nullptr;
+    }
+  }
+
   {
     AutoCheckCannotGC nogc;
-    const CharT* chars = str->chars<CharT>(nogc);
+    const CharT* chars = rootedStr->chars<CharT>(nogc);
 
     // Most one element Latin-1 strings can be directly retrieved from the
     // static strings cache.
@@ -1711,12 +1728,11 @@ static JSLinearString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // Foxhound: disabled. We need to return a new string here (so we can correctly
-    // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
-    // allocate a new string here.
+    // Foxhound: return the copy allocated above instead, as setting the taint
+    // on the input would record the operation on it.
     if (i == length) {
-      str->setTaint(cx, taint);
-      return str;
+      unchangedResult->setTaint(cx, taint);
+      return unchangedResult.get();
     }
 
     // The string changes when uppercased, so we must create a new string.
