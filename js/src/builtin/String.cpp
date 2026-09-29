@@ -1438,9 +1438,19 @@ static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
     locale = CaseMappingLocale(defaultLocale.language());
   }
 
+  // Foxhound: the name of the method that was called, recorded on top of
+  // whatever conversion actually produced the result.
+  const char* opName = targetCase == TargetCase::Lower ? "toLocaleLowerCase"
+                                                       : "toLocaleUpperCase";
+
   // Steps 4-10.
   if (!locale) {
     // Call the default case conversion methods for language independent casing.
+    // Foxhound: these record toLowerCase/toUpperCase rather than the method the
+    // caller used. That is left alone deliberately: the inline cache for
+    // toLocale{Lower,Upper}Case attaches exactly when the default locale uses
+    // default case mapping and then calls StringToLowerCase directly, so
+    // renaming here would only hold until the script got hot.
     return targetCase == TargetCase::Lower ? StringToLowerCase(cx, string)
                                            : StringToUpperCase(cx, string);
   }
@@ -1469,7 +1479,19 @@ static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
     return nullptr;
   }
 
-  return buffer.toString(cx);
+  // Foxhound: carry the taint over. The locale mapping is not one to one, so
+  // the ranges are approximate and clamped to the result, which is the same
+  // compromise the language independent conversions above make.
+  Rooted<JSLinearString*> result(cx, buffer.toString(cx));
+  if (!result) {
+    return nullptr;
+  }
+  if (string->isTainted()) {
+    SafeStringTaint taint(string->taint().safeSubTaint(0, result->length()));
+    taint.extend(TaintOperationFromContext(cx, opName, string));
+    result->setTaint(cx, taint);
+  }
+  return result;
 }
 #endif
 

@@ -55,6 +55,28 @@ function charConversionGCTest() {
 
 runTaintTest(charConversionTest);
 
+// The locale specific conversions go through ICU, which used to produce an
+// untainted string. The mapping is not one to one, so only the operation and the
+// presence of taint are asserted here.
+function localeCharConversionTest() {
+    // A locale that needs a real mapping goes through ICU, which used to lose
+    // the taint completely. A locale that does not is language independent
+    // casing and still records toLowerCase/toUpperCase.
+    var str = taint('ABCI');
+    assertTainted(str.toLocaleLowerCase('tr'));
+    assertLastTaintOperationEquals(str.toLocaleLowerCase('tr'), 'toLocaleLowerCase');
+    assertNotHasTaintOperation(str, 'toLocaleLowerCase');
+    assertLastTaintOperationEquals(str.toLocaleLowerCase(), 'toLowerCase');
+
+    str = taint('abci');
+    assertTainted(str.toLocaleUpperCase('tr'));
+    assertLastTaintOperationEquals(str.toLocaleUpperCase('tr'), 'toLocaleUpperCase');
+    assertNotHasTaintOperation(str, 'toLocaleUpperCase');
+    assertLastTaintOperationEquals(str.toLocaleUpperCase(), 'toUpperCase');
+}
+
+runTaintTest(localeCharConversionTest);
+
 // Not through runTaintTest: this one drives its own warmup loop.
 charConversionGCTest();
 
