@@ -527,7 +527,9 @@ function String_split(separator, limit) {
     // Fast path for regular expressions with the original
     // RegExp.prototype[@@split] function.
     if (IsOptimizableRegExpObject(separator)) {
-      return callFunction(RegExpSplit, separator, this, limit);
+      var ret = callFunction(RegExpSplit, separator, this, limit);
+      addTaintToArray(ret, "split", separator);
+      return ret;
     }
 
     // Step 2.a.
@@ -535,7 +537,9 @@ function String_split(separator, limit) {
 
     // Step 2.b.
     if (splitter !== undefined) {
-      return callContentFunction(splitter, separator, this, limit);
+      var ret = callContentFunction(splitter, separator, this, limit);
+      addTaintToArray(ret, "split", separator);
+      return ret;
     }
   }
 
