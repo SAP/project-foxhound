@@ -4516,9 +4516,15 @@ static const JSFunctionSpec string_methods[] = {
     JS_INLINABLE_FN("lastIndexOf", str_lastIndexOf, 1, 0, StringLastIndexOf),
     JS_INLINABLE_FN("startsWith", str_startsWith, 1, 0, StringStartsWith),
     JS_INLINABLE_FN("endsWith", str_endsWith, 1, 0, StringEndsWith),
-    JS_INLINABLE_FN("trim", str_trim, 0, 0, StringTrim),
-    JS_INLINABLE_FN("trimStart", str_trimStart, 0, 0, StringTrimStart),
-    JS_INLINABLE_FN("trimEnd", str_trimEnd, 0, 0, StringTrimEnd),
+    // Foxhound: deliberately not inlinable. Warp transpiles the trim inline
+    // cache into a linearize/trim-index/substring sequence that propagates the
+    // taint but records no trim operation, so the operation disappeared from a
+    // flow as soon as the script got hot. The baseline and Ion caches go
+    // through js::StringTrim, which does record it, and so does this native.
+    // Costs roughly 2.4x on a trim microbenchmark, about 28ns per call.
+    JS_FN("trim", str_trim, 0, 0),
+    JS_FN("trimStart", str_trimStart, 0, 0),
+    JS_FN("trimEnd", str_trimEnd, 0, 0),
     JS_INLINABLE_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0,
                     StringToLocaleLowerCase),
     JS_INLINABLE_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0,
