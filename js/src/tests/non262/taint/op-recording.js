@@ -30,7 +30,39 @@ function replaceOnceTest() {
     assertEq(countOp(f(taint("tainted")), "replace"), 1);
 }
 
+// Operation names per range, leaving out the "function" operations that
+// passing the string to the test's own helpers records.
+function opNames(str) {
+  return str.taint.map(r => r.flow.map(op => op.operation)
+                                   .filter(name => name !== "function"));
+}
+
+// Operations that return one of their inputs unchanged must not record on it.
+function checkInputNotModified(cases) {
+  for (var [f, make] of cases) {
+    warm(f, "untainted --------------------------------");
+    for (var i = 0; i < 100; i++) {
+      var input = make();
+      var before = JSON.stringify(opNames(input));
+      var res = f(input);
+      assertTainted(res);
+      assertEq(JSON.stringify(opNames(input)), before);
+    }
+  }
+}
+
+var flat = () => taint("tainted");
+
+function concatEmptyTest() {
+  checkInputNotModified([
+    [s => s + "", flat],
+    [s => "" + s, flat],
+    [s => s.concat(""), flat],
+  ]);
+}
+
 replaceOnceTest();
+concatEmptyTest();
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);
