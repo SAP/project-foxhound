@@ -77,20 +77,29 @@ def main():
     result = None
     outfile = "jstest_dump.txt"
     errfile = "jstest_stderr.txt"
-    cmd = ["./mach", "jstests", "--tinderbox"]
+    # The taint suite runs a second time in every JIT tier configuration:
+    # interpreter, baseline and Warp can each drop taint on their own paths.
+    cmds = [
+        ["./mach", "jstests", "--tinderbox"],
+        ["./mach", "jstests", "--tinderbox", "--jitflags=all", "non262/taint"],
+    ]
+    cmd = [" && ".join(" ".join(c) for c in cmds)]
 
     if run_tests:
-        print(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True)
-        print("Done!")
+        data = ""
+        errdata = ""
+        for c in cmds:
+            print(f"Running: {' '.join(c)}")
+            result = subprocess.run(c, capture_output=True)
+            print("Done!")
+            data += result.stdout.decode("utf-8")
+            errdata += result.stderr.decode("utf-8")
 
         print(f"Writing stdout to {outfile}")
-        data = result.stdout.decode("utf-8")
         with open(outfile, "w+") as f:
             f.write(data)
 
         print(f"Writing stdout to {errfile}")
-        errdata = result.stderr.decode("utf-8")
         with open(errfile, "w+") as f:
             f.write(errdata)
     else:
