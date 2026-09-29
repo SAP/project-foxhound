@@ -14,6 +14,20 @@ function strEscapeTest() {
     assertEq(decodedStr, str);
     assertEqualTaint(decodedStr, str);
     assertNotHasTaintOperation(encodedStr, 'unescape');
+
+    // With nothing to escape, escape() used to return its own input and record
+    // nothing, and unescape() used to return its input with the operation
+    // written onto it.
+    var plain = taint('abcdef');
+    var escaped = escape(plain);
+    assertLastTaintOperationEquals(escaped, 'escape');
+    assertFullTainted(escaped);
+    assertNotHasTaintOperation(plain, 'escape');
+
+    var unescaped = unescape(plain);
+    assertLastTaintOperationEquals(unescaped, 'unescape');
+    assertFullTainted(unescaped);
+    assertNotHasTaintOperation(plain, 'unescape');
 }
 
 runTaintTest(strEscapeTest);

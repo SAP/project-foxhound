@@ -513,6 +513,20 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
 
   // Return input if no characters need to be escaped.
   if (newLength == str->length()) {
+    // Foxhound: hand back a copy when there is taint to carry, so the operation
+    // is recorded and the input is left alone. Escape() leaves newtaint empty
+    // when it appends nothing, so take the taint from the copy itself.
+    if (str->isTainted()) {
+      Rooted<JSString*> res(cx, NewDependentString(cx, str, 0, str->length()));
+      if (!res) {
+        return false;
+      }
+      // Foxhound: build the operation first, as it allocates.
+      TaintOperation op = TaintOperationFromContext(cx, "escape", str);
+      res->taint().extend(std::move(op));
+      args.rval().setString(res);
+      return true;
+    }
     args.rval().setString(str);
     return true;
   }
@@ -690,9 +704,16 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 6.
-  JSLinearString* result;
+  Rooted<JSLinearString*> result(cx);
   if (!sb.empty()) {
     result = sb.finishString();
+    if (!result) {
+      return false;
+    }
+  } else if (newtaint.hasTaint()) {
+    // Foxhound: nothing was unescaped. Copy the input rather than returning it,
+    // so setting the taint below does not record the operation on the input.
+    result = NewDependentString(cx, str, 0, str->length());
     if (!result) {
       return false;
     }
