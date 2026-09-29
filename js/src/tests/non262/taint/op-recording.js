@@ -61,8 +61,19 @@ function concatEmptyTest() {
   ]);
 }
 
+var rope = () => taint("tainted") + "--------------------------------";
+
+function fullRopeSubstringTest() {
+  checkInputNotModified([
+    [s => s.substring(0), rope],
+    [s => s.slice(0), rope],
+    [s => s.substr(0), rope],
+  ]);
+}
+
 replaceOnceTest();
 concatEmptyTest();
+fullRopeSubstringTest();
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);

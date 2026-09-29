@@ -973,7 +973,9 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   if (str->isRope()) {
     JSRope* rope = &str->asRope();
 
-    if (rope->length() == len) {
+    // Foxhound: a tainted rope needs a copy, otherwise the caller's taint
+    // operation would be recorded on the input string.
+    if (rope->length() == len && !rope->isTainted()) {
       // Substring is the full rope.
       MOZ_ASSERT(begin == 0);
       return rope;
