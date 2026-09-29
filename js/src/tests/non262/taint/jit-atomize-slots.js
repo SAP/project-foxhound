@@ -17,7 +17,22 @@ function globalPropertyTest() {
   assertFullTainted(globalThis.globalTainted);
 }
 
+// A property value used as a key was atomized in Ion and stored back into its
+// slot.
+function propertyKeyTest() {
+  var holder = { key: "untainted key" };
+  var table = { "untainted key": 1, "tainted key": 2 };
+  function lookup(h) { return table[h.key]; }
+  for (var i = 0; i < 3000; i++)
+    lookup(holder);
+  holder.key = taint("tainted key");
+  for (var i = 0; i < 100; i++)
+    assertEq(lookup(holder), 2);
+  assertFullTainted(holder.key);
+}
+
 globalPropertyTest();
+propertyKeyTest();
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);
