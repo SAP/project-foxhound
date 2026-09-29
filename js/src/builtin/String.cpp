@@ -3799,9 +3799,9 @@ JSString* js::StringFlatReplaceString(JSContext* cx, HandleString string,
   return sb.finishString();
 }
 
-JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
-                                     HandleString pattern,
-                                     HandleString replacement) {
+static JSString* ReplaceStringRaw(JSContext* cx, HandleString string,
+                                  HandleString pattern,
+                                  HandleString replacement) {
   Rooted<JSLinearString*> pat(cx, pattern->ensureLinear(cx));
   if (!pat) {
     return nullptr;
@@ -3850,6 +3850,21 @@ JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
     return BuildFlatRopeReplacement(cx, string, repl, match, patternLength);
   }
   return BuildFlatReplacement(cx, string, repl, match, patternLength);
+}
+
+JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
+                                     HandleString pattern,
+                                     HandleString replacement) {
+  RootedString result(cx, ReplaceStringRaw(cx, string, pattern, replacement));
+
+  // Foxhound: when the replacement covers the whole string the result is the
+  // replacement itself. Copy it, the caller records its taint operation on
+  // the result.
+  if (result && result->isTainted() &&
+      (result == string || result == replacement)) {
+    return NewDependentString(cx, result, 0, result->length());
+  }
+  return result;
 }
 
 template <typename StrChar, typename RepChar>

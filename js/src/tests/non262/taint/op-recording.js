@@ -71,9 +71,17 @@ function fullRopeSubstringTest() {
   ]);
 }
 
+function wholeStringReplaceTest() {
+  checkInputNotModified([
+    [s => s.replace(s, s), flat],
+    [s => "x".replace("x", s), flat],
+  ]);
+}
+
 replaceOnceTest();
 concatEmptyTest();
 fullRopeSubstringTest();
+wholeStringReplaceTest();
 
 if (typeof reportCompare === "function")
   reportCompare(true, true);
