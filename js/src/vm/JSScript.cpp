@@ -48,6 +48,7 @@
 #include "js/CharacterEncoding.h"  // JS_EncodeStringToUTF8
 #include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin, JS::ColumnNumberOffset
 #include "js/CompileOptions.h"
+#include "js/Exception.h"  // JS::AutoSaveExceptionState
 #include "js/experimental/SourceHook.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/HeapAPI.h"               // JS::GCCellPtr
@@ -1290,15 +1291,34 @@ TaintMd5 ScriptSource::md5Checksum(JSContext* cx)
   // Lazy compute the MD5
   static TaintMd5 empty = {0};
   if ((md5_ == empty) && hasSourceText()) {
+    // Hash the UTF-8 encoded source text without allocating GC things, as
+    // callers record taint operations and may hold unrooted strings.
     size_t len = length();
-    JSLinearString* str = substring(cx, 0, len);
-    // Encode to UTF8
-    JS::UniqueChars chars = StringToNewUTF8CharsZ(cx, *str);
-    size_t utf8len = JS::GetDeflatedUTF8StringLength(str);
-    // Compute the MD5
+    // Failures leave the hash empty, and must not clobber an exception that
+    // was already pending.
+    JS::AutoSaveExceptionState savedExc(cx);
+    UncompressedSourceCache::AutoHoldEntry holder;
     MD5Context mcx;
     MD5Init(&mcx);
-    MD5Update(&mcx, reinterpret_cast<md5byte*>(chars.get()), utf8len);
+    if (len > 0 && hasSourceType<Utf8Unit>()) {
+      PinnedUnits<Utf8Unit> units(cx, this, holder, 0, len);
+      if (!units.asChars()) {
+        cx->clearPendingException();
+        return empty;
+      }
+      MD5Update(&mcx, reinterpret_cast<const md5byte*>(units.asChars()), len);
+    } else if (len > 0) {
+      PinnedUnits<char16_t> units(cx, this, holder, 0, len);
+      UniquePtr<char[], JS::FreePolicy> utf8(js_pod_malloc<char>(len * 3));
+      if (!units.asChars() || !utf8) {
+        cx->clearPendingException();
+        return empty;
+      }
+      size_t utf8len =
+          mozilla::ConvertUtf16toUtf8(mozilla::Span(units.asChars(), len),
+                                      mozilla::Span(utf8.get(), len * 3));
+      MD5Update(&mcx, reinterpret_cast<const md5byte*>(utf8.get()), utf8len);
+    }
     MD5Final(md5_.data(), &mcx);
   }
   return md5_;
