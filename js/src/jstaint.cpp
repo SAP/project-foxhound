@@ -401,10 +401,11 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function,
     if (args[i].isString()) {
       RootedString arg(cx, args[i].toString());
       if (arg->isTainted()) {
-        arg->taint().extend(
-            TaintOperation("function", location,
-                           {taintarg(cx, name), sourceinfo, taintarg(cx, i),
-                            taintarg(cx, args.length())}));
+        // Foxhound: build the operation first, it can GC and move arg.
+        TaintOperation op("function", location,
+                          {taintarg(cx, name), sourceinfo, taintarg(cx, i),
+                           taintarg(cx, args.length())});
+        arg->taint().extend(std::move(op));
       }
     }
   }
