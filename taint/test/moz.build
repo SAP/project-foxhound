@@ -8,13 +8,14 @@
 #    "unit/xpcshell.ini",
 # ]
 
-TEST_DIRS += [
-    "gtest",
-]
+if not CONFIG["JS_STANDALONE"]:
+    TEST_DIRS += [
+        "gtest",
+    ]
 
-MOCHITEST_MANIFESTS += [
-    "mochitest/mochitest.ini",
-]
+    MOCHITEST_MANIFESTS += [
+        "mochitest/mochitest.ini",
+    ]
 
 # MOCHITEST_CHROME_MANIFESTS += [
 #    "chrome/chrome.ini",
