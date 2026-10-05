@@ -59,7 +59,17 @@ jobs:
       - name: Bootstrap Build Tools
         run: |
           ./mach --no-interactive bootstrap --application-choice=js
-      
+
+      - name: Install Rust
+        run: |
+          RUST_VERSION=$(grep '^RUST_VERSION=' .PLAYWRIGHT_VERSION | cut -d'"' -f2)
+          if ! echo "${RUST_VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid RUST_VERSION: ${RUST_VERSION}" && exit 1
+          fi
+          echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
+          rustup install "${RUST_VERSION}"
+          rustup default "${RUST_VERSION}"
+
       # Build
       - name: Build
         run: |
